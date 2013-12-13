@@ -42,8 +42,8 @@ public class AlarmKlaxon {
     // Volume suggested by media team for in-call alarms.
     private static final float IN_CALL_VOLUME = 0.125f;
 
-    // 5sec * 7 volume levels = 30sec till max volume
-    private static final long INCREASING_VOLUME_DELAY = 5000;
+    // 2.143sec * 15 volume levels = aprox 30sec till max volume
+    private static final long INCREASING_VOLUME_DELAY = 2143;
     private static final int INCREASING_VOLUME_START = 1;
     private static final int INCREASING_VOLUME_DELTA = 1;
 
