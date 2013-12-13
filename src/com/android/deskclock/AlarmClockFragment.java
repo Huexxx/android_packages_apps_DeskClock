@@ -636,7 +636,7 @@ public class AlarmClockFragment extends DeskClockFragment implements
         Uri oldRingtone = Alarm.NO_RINGTONE_URI.equals(alarm.alert) ? null : alarm.alert;
         final Intent intent = new Intent(RingtoneManager.ACTION_RINGTONE_PICKER);
         intent.putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, oldRingtone);
-        intent.putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM);
+        intent.putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_RINGTONE | RingtoneManager.TYPE_ALARM);
         intent.putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, false);
         startActivityForResult(intent, REQUEST_CODE_RINGTONE);
     }
