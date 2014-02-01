@@ -26,7 +26,7 @@
     android:layout_gravity="center"
     android:focusable="true"
     android:visibility="visible"
-    android:background="@color/glow_pad_background"
+    android:background="#cccccc"
 
     dc:targetDrawables="@array/snooze_dismiss_drawables"
     dc:targetDescriptions="@array/snooze_dismiss_descriptions"
