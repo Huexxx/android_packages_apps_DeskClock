@@ -26,6 +26,7 @@ import android.app.Fragment;
 import android.app.FragmentTransaction;
 import android.app.LoaderManager;
 import android.content.ContentResolver;
+import android.content.ContentUris;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -42,6 +43,7 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Vibrator;
+import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.text.format.DateFormat;
 import android.view.Gravity;
@@ -106,6 +108,7 @@ public class AlarmClockFragment extends DeskClockFragment implements
     private static final String KEY_SELECT_SOURCE = "selectedSource";
 
     private static final String DOC_AUTHORITY = "com.android.providers.media.documents";
+    private static final String DOC_DOWNLOAD = "com.android.providers.downloads.documents";
 
     private static final int REQUEST_CODE_RINGTONE = 1;
     private static final int REQUEST_CODE_EXTERN_AUDIO = 3;
@@ -1489,9 +1492,9 @@ public class AlarmClockFragment extends DeskClockFragment implements
                     title = mContext.getResources().getString(R.string.alarm_type_random);
                 } else {
                     if (isRingToneUriValid(uri)) {
-                        // This is slow because a media player is created during Ringtone object creation.
-                        if (uri.getAuthority().equals(DOC_AUTHORITY)) {
-                            title = mDisplayName;
+                        if (uri.getAuthority().equals(DOC_AUTHORITY)
+                                || uri.getAuthority().equals(DOC_DOWNLOAD)) {
+                            title = getDisplayNameFromDatabase(mContext,uri);
                         } else {
                             Ringtone ringTone = RingtoneManager.getRingtone(mContext, uri);
                             if (ringTone != null) {
@@ -1514,30 +1517,50 @@ public class AlarmClockFragment extends DeskClockFragment implements
                     return true;
                 }
             } else if (uri.getScheme().contentEquals("content")) {
-                Cursor cursor = null;
-                try {
-                    cursor = mContext.getContentResolver().query(uri,
-                            new String[] {
-                                MediaStore.Audio.Media.TITLE,
-                                MediaStore.Audio.Media.DISPLAY_NAME
-                            }, null, null, null);
-                    if (cursor != null && cursor.getCount() > 0) {
-                        if (uri.getAuthority().equals(DOC_AUTHORITY)) {
-                            cursor.moveToFirst();
-                            mDisplayName = cursor.getString(1);
-                        }
-                        return true;
-                    }
-                } catch (Exception e) {
-                    Log.e("Get ringtone uri Exception: e.toString=" + e.toString());
-                } finally {
-                    if (cursor != null) {
-                        cursor.close();
-                    }
-                }
+                return true;
             }
 
             return false;
+        }
+
+        private String getDisplayNameFromDatabase(Context context,Uri uri) {
+            String selection = null;
+            String[] selectionArgs = null;
+            String title = mContext.getString(R.string.ringtone_default);
+            // If restart Alarm,there is no permission to get the title from the uri.
+            // No matter in which database,the music has the same id.
+            // So we can only get the info of the music from other database by id in uri.
+            if (uri.getAuthority().equals(DOC_DOWNLOAD)) {
+                final String id = DocumentsContract.getDocumentId(uri);
+                uri = ContentUris.withAppendedId(
+                        Uri.parse("content://downloads/public_downloads"), Long.valueOf(id));
+            } else if (uri.getAuthority().equals(DOC_AUTHORITY)) {
+                final String docId = DocumentsContract.getDocumentId(uri);
+                final String[] split = docId.split(":");
+                uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+                selection = "_id=?";
+                selectionArgs = new String[] {
+                    split[1]
+                };
+            }
+            Cursor cursor = null;
+            try {
+                cursor = context.getContentResolver().query(uri,
+                        new String[] {
+                                MediaStore.Audio.Media.TITLE,
+                        }, selection, selectionArgs, null);
+                if (cursor != null && cursor.getCount() > 0) {
+                        cursor.moveToFirst();
+                    title = cursor.getString(0);
+                }
+            } catch (Exception e) {
+                Log.e("Get ringtone uri Exception: e.toString=" + e.toString());
+            } finally {
+                if (cursor != null) {
+                    cursor.close();
+                }
+            }
+            return title;
         }
 
         public void setNewAlarm(long alarmId) {
