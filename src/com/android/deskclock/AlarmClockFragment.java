@@ -21,11 +21,13 @@ import android.animation.Animator.AnimatorListener;
 import android.animation.AnimatorInflater;
 import android.animation.ValueAnimator;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.Fragment;
 import android.app.FragmentTransaction;
 import android.app.LoaderManager;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.Loader;
 import android.content.res.Configuration;
@@ -34,6 +36,7 @@ import android.database.Cursor;
 import android.database.DataSetObserver;
 import android.graphics.Rect;
 import android.graphics.Typeface;
+import android.media.AudioManager;
 import android.media.Ringtone;
 import android.media.RingtoneManager;
 import android.net.Uri;
@@ -76,6 +79,7 @@ import com.android.deskclock.widget.TextTime;
 import java.text.DateFormatSymbols;
 import java.util.Calendar;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -431,6 +435,8 @@ public class AlarmClockFragment extends DeskClockFragment implements
         mAlarmsList.setVerticalScrollBarEnabled(true);
         mAlarmsList.setOnCreateContextMenuListener(this);
 
+        mAudioManager = (AudioManager)getActivity().getSystemService(Context.AUDIO_SERVICE);
+
         if (mUndoShowing) {
             showUndoBar();
         }
@@ -471,6 +477,12 @@ public class AlarmClockFragment extends DeskClockFragment implements
 
             // Remove the SCROLL_TO_ALARM extra now that we've processed it.
             intent.removeExtra(SCROLL_TO_ALARM_INTENT_EXTRA);
+        } else {
+            // If alarm stream volume is 0, show a warning
+            if (mAudioManager.getStreamVolume(AudioManager.STREAM_ALARM) == 0) {
+                showSilentWarningBar();
+            }
+
         }
 
         // Make sure to use the child FragmentManager. We have to use that one for the
@@ -507,7 +519,20 @@ public class AlarmClockFragment extends DeskClockFragment implements
                 mDeletedAlarm = null;
                 mUndoShowing = false;
             }
-        }, 0, getResources().getString(R.string.alarm_deleted), true, R.string.alarm_undo, true);
+        }, 0, getResources().getString(R.string.alarm_deleted), true, 0, R.string.alarm_undo, true);
+    }
+
+    private void showSilentWarningBar() {
+        mUndoFrame.setVisibility(View.VISIBLE);
+        mUndoBar.show(new ActionableToastBar.ActionClickedListener() {
+            @Override
+            public void onActionClicked() {
+                mAudioManager.adjustStreamVolume(AudioManager.STREAM_ALARM,
+                        AudioManager.ADJUST_SAME, AudioManager.FLAG_SHOW_UI);
+                mUndoShowing = false;
+            }
+        }, 0, getResources().getString(R.string.warn_silent_alarm_title), true,
+                R.drawable.ic_alarm, 0, true);
     }
 
     @Override
@@ -631,7 +656,31 @@ public class AlarmClockFragment extends DeskClockFragment implements
         mAdapter.swapCursor(null);
     }
 
-    private void launchRingTonePicker(Alarm alarm) {
+    private void launchRingTonePicker(final Alarm alarm) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
+        builder.setTitle(R.string.alarm_picker_title).setItems(
+                R.array.ringtone_picker_entries,
+
+                new DialogInterface.OnClickListener() {
+
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        switch (which) {
+                            case 0:
+                                launchSingleRingTonePicker(alarm);
+                                break;
+                            case 1:
+                                alarm.alert = MultiPlayer.RANDOM_URI;
+                                asyncUpdateAlarm(alarm, false);
+                                break;
+                        }
+                    }
+                });
+        AlertDialog d = builder.create();
+        d.show();
+    }
+
+    private void launchSingleRingTonePicker(Alarm alarm) {
         mSelectedAlarm = alarm;
         Uri oldRingtone = Alarm.NO_RINGTONE_URI.equals(alarm.alert) ? null : alarm.alert;
         final Intent intent = new Intent(RingtoneManager.ACTION_RINGTONE_PICKER);
@@ -694,15 +743,8 @@ public class AlarmClockFragment extends DeskClockFragment implements
         private final int mCollapseExpandHeight;
 
         // This determines the order in which it is shown and processed in the UI.
-        private final int[] DAY_ORDER = new int[] {
-                Calendar.SUNDAY,
-                Calendar.MONDAY,
-                Calendar.TUESDAY,
-                Calendar.WEDNESDAY,
-                Calendar.THURSDAY,
-                Calendar.FRIDAY,
-                Calendar.SATURDAY,
-        };
+        // The array is filled when the adapter is created
+        private final int[] DAY_ORDER = new int[7];
 
         public class ItemHolder {
 
@@ -758,6 +800,14 @@ public class AlarmClockFragment extends DeskClockFragment implements
             DateFormatSymbols dfs = new DateFormatSymbols();
             mShortWeekDayStrings = dfs.getShortWeekdays();
             mLongWeekDayStrings = dfs.getWeekdays();
+            int firstDayOfWeek = Calendar.getInstance(Locale.getDefault()).getFirstDayOfWeek();
+            int j = 0;
+            for (int i = firstDayOfWeek; i <= DAY_ORDER.length; i++, j++) {
+                DAY_ORDER[j] = i;
+            }
+            for (int i = Calendar.SUNDAY; i < firstDayOfWeek; i++, j++) {
+                DAY_ORDER[j] = i;
+            }
 
             Resources res = mContext.getResources();
             mColorLit = res.getColor(R.color.clock_white);
@@ -1273,10 +1323,16 @@ public class AlarmClockFragment extends DeskClockFragment implements
             });
 
             final String ringtone;
+            final String ringtitle;
             if (Alarm.NO_RINGTONE_URI.equals(alarm.alert)) {
                 ringtone = mContext.getResources().getString(R.string.silent_alarm_summary);
             } else {
-                ringtone = getRingToneTitle(alarm.alert);
+                ringtitle = getRingToneTitle(alarm.alert);
+                if (ringtitle != null) {
+                    ringtone = ringtitle;
+                } else {
+                    ringtone = mContext.getResources().getString(R.string.silent_alarm_summary);
+                }
             }
             itemHolder.ringtone.setText(ringtone);
             itemHolder.ringtone.setContentDescription(
@@ -1375,9 +1431,15 @@ public class AlarmClockFragment extends DeskClockFragment implements
             // Try the cache first
             String title = mRingtoneTitleCache.getString(uri.toString());
             if (title == null) {
-                // This is slow because a media player is created during Ringtone object creation.
-                Ringtone ringTone = RingtoneManager.getRingtone(mContext, uri);
-                title = ringTone.getTitle(mContext);
+                if (uri.equals(MultiPlayer.RANDOM_URI)) {
+                    title = mContext.getResources().getString(R.string.alarm_type_random);
+                } else {
+                    // This is slow because a media player is created during Ringtone object creation.
+                    Ringtone ringTone = RingtoneManager.getRingtone(mContext, uri);
+                    if (ringTone != null) {
+                        title = ringTone.getTitle(mContext);
+                    }
+                }
                 if (title != null) {
                     mRingtoneTitleCache.putString(uri.toString(), title);
                 }
