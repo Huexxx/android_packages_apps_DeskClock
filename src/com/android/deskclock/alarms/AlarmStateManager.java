@@ -477,8 +477,7 @@ public final class AlarmStateManager extends BroadcastReceiver {
         updateNextAlarm(context);
         if (isPowerOffAlarm(context)) {
             try {
-                context.startActivity(new Intent(ACTION_POWER_ON_ALERT)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                context.startActivity(new Intent(ACTION_POWER_ON_ALERT));
             } catch (ActivityNotFoundException ex) {
                 // do nothing, the powerOnAlert app couldn't be found.
             }
